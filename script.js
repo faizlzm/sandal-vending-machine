@@ -1,171 +1,197 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const vendingMachineConfig = {
-    id: 'slipperVendingMachine',
-    initial: 'idle',
-    context: {
-      insertedMoney: 0,
-      selectedItem: null,   
-      change: 0
-    },
-    states: {
-      idle: {
-        entry: 'resetMachine',
-        on: { START: 'selecting' }
-      },
-      selecting: {
-        entry: 'showSelectionScreen',
-        on: {
-          SELECT_ITEM: { actions: 'setSelectedItem' },
-          INSERT_MONEY: { actions: 'addMoney' },
-          PURCHASE: { target: 'dispensing', cond: 'hasSufficientFunds' },
-          CANCEL: { target: 'returning', actions: 'calculateChange' }
-        }
-      },
-      dispensing: {
-        entry: 'displayDispensingMessage',
-        after: {
-          2000: { target: 'returning', actions: ['dispenseItem', 'calculateChange'] }
-        }
-      },
-      returning: {
-        entry: 'displayReturningChange',
-        after: {
-          2000: { target: 'idle', actions: 'dispenseChange' }
-        }
-      }
-    }
-  };
+const { createMachine, assign, interpret } = XState; 
+const { fromEvent, merge } = rxjs; 
+const { map, tap } = rxjs.operators;
 
-  const vendingMachineOptions = {
+const slipperVendingMachineDefinition = {
+    context: {
+        change: 0,
+        selectedItem: null,
+        insertedMoney: 0,
+    },
+    id: "slipperVendingMachine",
+    initial: "idle",
+    states: {
+        idle: {
+            entry: {
+                type: "resetContext", 
+            },
+            on: {
+                START: "selecting",
+            },
+        },
+        selecting: {
+            on: {
+                SELECT_ITEM: {
+                    actions: "assignSelectedItem", 
+                },
+                INSERT_MONEY: {
+                    actions: "assignInsertedMoney", 
+                },
+                PURCHASE: {
+                    target: "dispensing",
+                    cond: "canPurchase", 
+                },
+                CANCEL: {
+                    target: "returning",
+                    actions: "calculateChangeOnCancel", 
+                },
+            },
+        },
+        dispensing: {
+            entry: "displayDispensingMessage",
+            after: {
+                2000: { 
+                    target: "returning",
+                    actions: "calculateChangeOnPurchase", 
+                },
+            },
+        },
+        returning: {
+            entry: "displayReturningChangeMessage",
+            after: {
+                2000: "idle", 
+            },
+        },
+    },
+    predictableActionArguments: true,
+    preserveActionOrder: true,
+};
+
+const machineOptions = {
     actions: {
-      resetMachine: (context) => {
-        context.insertedMoney = 0;
-        context.selectedItem = null;
-        context.change = 0;
-        showScreen('idle-screen');
-        updateDisplay('Selamat Datang di Sandal Vending Machine!');
-        resetDispensed();
-        updateInsertedAmount(0);
-        updateSelectedItem('Tidak Ada');
-        disablePurchaseButton();
-        clearSelectedProducts();
-      },
-      showSelectionScreen: () => {
-        showScreen('selection-screen');
-        updateDisplay('Silakan pilih produk dan masukkan uang');
-      },
-      setSelectedItem: (context, event) => {
-        context.selectedItem = { id: event.id, name: event.name, price: event.price };
-        updateSelectedItem(event.name);
-        highlightSelectedProduct(event.id);
-        updateDisplay(`Dipilih: ${event.name} - Rp${event.price}.000`);
-        if (context.insertedMoney < event.price) {
-          updateDisplay(`Dipilih: ${event.name} - Rp${event.price}.000. Perlu Rp${(event.price - context.insertedMoney)}.000 lagi`);
-          disablePurchaseButton();
-        } else {
-          updateDisplay(`Dipilih: ${event.name} - Siap untuk dibeli!`);
-          enablePurchaseButton();
+        resetContext: assign({
+            insertedMoney: 0,
+            selectedItem: null,
+            change: 0,
+        }),
+        assignSelectedItem: assign({
+            selectedItem: (_, event) => ({
+                id: event.id,
+                name: event.name,
+                price: event.price,
+            }),
+        }),
+        assignInsertedMoney: assign({
+            insertedMoney: (context, event) =>
+                context.insertedMoney + event.amount,
+        }),
+        calculateChangeOnCancel: assign({
+            change: (context) => context.insertedMoney,
+        }),
+        calculateChangeOnPurchase: assign({
+            change: (context) =>
+                Math.max(0, context.insertedMoney - (context.selectedItem?.price || 0)),
+        }),
+        displayDispensingMessage: (context, event) => {
+            console.log("Action: displayDispensingMessage");
+            document.getElementById('messageDisplay').textContent = `Dispensing ${context.selectedItem?.name || 'item'}... Please wait.`;
+        },
+        displayReturningChangeMessage: (context, event) => {
+            console.log("Action: displayReturningChangeMessage");
+            if (context.change > 0) {
+                document.getElementById('messageDisplay').textContent = `Returning change: Rp${context.change}. Thank you!`;
+            } else {
+                document.getElementById('messageDisplay').textContent = `Transaction complete. Thank you!`;
+            }
         }
-      },
-      addMoney: (context, event) => {
-        context.insertedMoney += event.amount;
-        updateInsertedAmount(context.insertedMoney);
-        if (context.selectedItem) {
-          const remaining = context.selectedItem.price - context.insertedMoney;
-          if (remaining > 0) {
-            updateDisplay(`Ditambahkan Rp${event.amount}.000. Total: Rp${context.insertedMoney}.000. Perlu Rp${remaining}.000 lagi`);
-            disablePurchaseButton();
-          } else {
-            updateDisplay(`Ditambahkan Rp${event.amount}.000. Siap untuk dibeli!`);
-            enablePurchaseButton();
-          }
-        } else {
-          updateDisplay(`Ditambahkan Rp${event.amount}.000. Total: Rp${context.insertedMoney}.000`);
-        }
-      },
-      calculateChange: (context) => {
-        context.change = context.selectedItem ? Math.max(0, context.insertedMoney - context.selectedItem.price) : context.insertedMoney;
-      },
-      displayDispensingMessage: (context) => {
-        updateDisplay(`Mengeluarkan ${context.selectedItem.name}...`);
-      },
-      dispenseItem: (context) => {
-        document.getElementById('dispensed').innerHTML = `<h3>Ini ${context.selectedItem.name} Anda!</h3>`;
-      },
-      displayReturningChange: (context) => {
-        if (context.change > 0) {
-          updateDisplay(`Transaksi selesai. Mengembalikan kembalian: Rp${context.change}.000`);
-        } else {
-          updateDisplay('Terima kasih atas pembelian Anda!');
-        }
-      },
-      dispenseChange: (context) => {
-        if (context.change > 0) {
-          document.getElementById('dispensed').innerHTML += `<div>Kembalian: Rp${context.change}.000</div>`;
-        }
-      }
     },
     guards: {
-      hasSufficientFunds: (context) => context.selectedItem && context.insertedMoney >= context.selectedItem.price
+        canPurchase: (context) =>
+            context.selectedItem &&
+            context.insertedMoney >= context.selectedItem.price,
+    },
+};
+
+const slipperVendingMachine = createMachine(slipperVendingMachineDefinition, machineOptions);
+
+const startButton = document.getElementById('startButton');
+const purchaseButton = document.getElementById('purchaseButton');
+const cancelButton = document.getElementById('cancelButton');
+const selectSlipperAButton = document.getElementById('selectSlipperA');
+const selectSlipperBButton = document.getElementById('selectSlipperB');
+const insert10kButton = document.getElementById('insert10k');
+const insert20kButton = document.getElementById('insert20k');
+const insert50kButton = document.getElementById('insert50k');
+
+const currentStateDisplay = document.getElementById('currentState');
+const selectedItemDisplay = document.getElementById('selectedItemDisplay');
+const itemPriceDisplay = document.getElementById('itemPriceDisplay');
+const insertedMoneyDisplay = document.getElementById('insertedMoneyDisplay');
+const changeDisplay = document.getElementById('changeDisplay');
+const messageDisplay = document.getElementById('messageDisplay');
+
+const vendingService = interpret(slipperVendingMachine).start();
+
+const start$ = fromEvent(startButton, 'click').pipe(map(() => ({ type: 'START' })));
+const purchase$ = fromEvent(purchaseButton, 'click').pipe(map(() => ({ type: 'PURCHASE' })));
+const cancel$ = fromEvent(cancelButton, 'click').pipe(map(() => ({ type: 'CANCEL' })));
+
+const selectSlipperA$ = fromEvent(selectSlipperAButton, 'click').pipe(
+    map(() => ({ type: 'SELECT_ITEM', id: 'slipperA', name: 'Slipper A', price: 25000 }))
+);
+const selectSlipperB$ = fromEvent(selectSlipperBButton, 'click').pipe(
+    map(() => ({ type: 'SELECT_ITEM', id: 'slipperB', name: 'Slipper B', price: 30000 }))
+);
+
+const insert10k$ = fromEvent(insert10kButton, 'click').pipe(
+    map(() => ({ type: 'INSERT_MONEY', amount: 10000 }))
+);
+const insert20k$ = fromEvent(insert20kButton, 'click').pipe(
+    map(() => ({ type: 'INSERT_MONEY', amount: 20000 }))
+);
+const insert50k$ = fromEvent(insert50kButton, 'click').pipe(
+    map(() => ({ type: 'INSERT_MONEY', amount: 50000 }))
+);
+
+merge(
+    start$,
+    purchase$,
+    cancel$,
+    selectSlipperA$,
+    selectSlipperB$,
+    insert10k$,
+    insert20k$,
+    insert50k$
+).pipe(
+    tap(event => console.log("Event dikirim ke mesin:", event))
+).subscribe(event => {
+    vendingService.send(event);
+});
+
+vendingService.subscribe(state => {
+    console.log("Status Kembalian:", state.value, "Context:", state.context);
+
+    currentStateDisplay.textContent = typeof state.value === 'string' ? state.value : JSON.stringify(state.value);
+    selectedItemDisplay.textContent = state.context.selectedItem ? state.context.selectedItem.name : 'None';
+    itemPriceDisplay.textContent = `Rp${state.context.selectedItem ? state.context.selectedItem.price : 0}`;
+    insertedMoneyDisplay.textContent = `Rp${state.context.insertedMoney}`;
+    changeDisplay.textContent = `Rp${state.context.change}`;
+
+    if (state.value !== 'dispensing' && state.value !== 'returning') {
+        if (state.value === 'idle' && state.history?.value !== 'returning') {
+            messageDisplay.textContent = 'Tekan MULAI untuk Membeli';
+        } else if (state.value === 'selecting') {
+            messageDisplay.textContent = 'Pilih Sandal dan Masukkan Uang';
+        }
     }
-  };
+    if (state.matches('idle') && !state.event.type.startsWith('xstate.after')) {
+        messageDisplay.textContent = 'Tekan MULAI untuk Membeli';
+    }
 
-  const vendingMachine = XState.Machine(vendingMachineConfig, vendingMachineOptions);
-  const service = XState.interpret(vendingMachine)
-    .onTransition(state => {
-      document.getElementById('current-state').textContent = state.value;
-      document.getElementById('context-data').textContent = JSON.stringify({
-        insertedMoney: state.context.insertedMoney,
-        selectedItem: state.context.selectedItem?.name || 'Tidak Ada',
-        change: state.context.change
-      }, null, 2);
-    })
-    .start();
 
-  document.getElementById('start-button').addEventListener('click', () => service.send('START'));
-  document.querySelectorAll('.product').forEach(el => {
-    el.addEventListener('click', () => {
-      service.send({ type: 'SELECT_ITEM', id: el.dataset.id, name: el.dataset.name, price: parseFloat(el.dataset.price) });
-    });
-  });
-  document.querySelectorAll('.coin').forEach(el => {
-    el.addEventListener('click', () => {
-      service.send({ type: 'INSERT_MONEY', amount: parseFloat(el.dataset.value) });
-    });
-  });
-  document.getElementById('purchase-button').addEventListener('click', () => service.send('PURCHASE'));
-  document.getElementById('cancel-button').addEventListener('click', () => service.send('CANCEL'));
+    startButton.disabled = !state.matches('idle');
+    const inSelectingState = state.matches('selecting');
+    purchaseButton.disabled = !inSelectingState || !state.can('PURCHASE');
+    cancelButton.disabled = !inSelectingState;
+    selectSlipperAButton.disabled = !inSelectingState;
+    selectSlipperBButton.disabled = !inSelectingState;
+    insert10kButton.disabled = !inSelectingState;
+    insert20kButton.disabled = !inSelectingState;
+    insert50kButton.disabled = !inSelectingState;
+});
 
-  function showScreen(screenId) {
-    document.getElementById('idle-screen').style.display = 'none';
-    document.getElementById('selection-screen').style.display = 'none';
-    document.getElementById(screenId).style.display = 'block';
-  }
-  function updateDisplay(message) {
-    document.getElementById('display').textContent = message;
-  }
-  function updateInsertedAmount(amount) {
-    document.getElementById('inserted-amount').textContent = amount + '.000';
-  }
-  function updateSelectedItem(name) {
-    document.getElementById('selected-item').textContent = name;
-  }
-  function resetDispensed() {
-    document.getElementById('dispensed').textContent = 'Produk Anda akan muncul di sini';
-  }
-  function enablePurchaseButton() {
-    document.getElementById('purchase-button').disabled = false;
-  }
-  function disablePurchaseButton() {
-    document.getElementById('purchase-button').disabled = true;
-  }
-  function clearSelectedProducts() {
-    document.querySelectorAll('.product').forEach(el => el.classList.remove('selected'));
-  }
-  function highlightSelectedProduct(id) {
-    clearSelectedProducts();
-    document.querySelectorAll('.product').forEach(el => {
-      if (el.dataset.id === id) el.classList.add('selected');
-    });
-  }
+document.addEventListener('DOMContentLoaded', () => {
+    if(vendingService.getSnapshot().matches('idle')) {
+        messageDisplay.textContent = 'Tekan MULAI untuk Membeli';
+    }
 });

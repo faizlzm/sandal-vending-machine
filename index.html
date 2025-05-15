@@ -1,80 +1,52 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sandal Vending Machine</title>
-  <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sandal Vending Machine</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px; }
+        .controls, .items, .money { display: flex; gap: 10px; margin-bottom: 10px; }
+        .display { border: 1px solid #ccc; padding: 15px; min-width: 300px; background-color: #f9f9f9; }
+        .display p { margin: 5px 0; }
+        button { padding: 8px 15px; cursor: pointer; }
+        h2, h3 { margin-top: 0; }
+    </style>
 </head>
 <body>
-  <div class="vending-machine">
-    <div class="header">
-      <h1>Sandal Vending Machine</h1>
-    </div>
-    
-    <div class="display" id="display" role="alert" aria-live="polite">Selamat Datang</div>
+    <h1>Sandal Vending Machine</h1>
 
-    <div id="idle-screen">
-      <p>Tekan tombol di bawah untuk mulai berbelanja sandal!</p>
-      <button id="start-button" class="start-button">Mulai Belanja</button>
+    <div class="controls">
+        <button id="startButton">Mulai</button>
+        <button id="purchaseButton">Beli</button>
+        <button id="cancelButton">Batal</button>
     </div>
 
-    <div id="selection-screen" style="display: none;">
-      <div class="section-title">
-        <h3>Pilih Sandal Anda</h3>
-      </div>
-      
-      <div class="product-grid">
-        <button class="product" tabindex="0" data-id="1" data-price="10" data-name="Sandal Pantai" aria-label="Pilih Sandal Pantai seharga Rp.10.000">
-          <h4>Sandal Pantai</h4>
-          <p>Rp.10.000</p>
-        </button>
-        <button class="product" tabindex="0" data-id="2" data-price="15" data-name="Sandal Nyaman" aria-label="Pilih Sandal Nyaman seharga Rp.15.000">
-          <h4>Sandal Nyaman</h4>
-          <p>Rp.15.000</p>
-        </button>
-        <button class="product" tabindex="0" data-id="3" data-price="20" data-name="Sandal Olahraga" aria-label="Pilih Sandal Olahraga seharga Rp.20.000">
-          <h4>Sandal Olahraga</h4>
-          <p>Rp.20.000</p>
-        </button>
-        <button class="product" tabindex="0" data-id="4" data-price="25" data-name="Sandal Kulit Mewah" aria-label="Pilih Sandal Kulit Mewah seharga Rp.25.000">
-          <h4>Sandal Kulit Mewah</h4>
-          <p>Rp.25.000</p>
-        </button>
-      </div>
-    
-      <div class="section-title">
-        <h3>Pembayaran</h3>
-      </div>
-      
-      <div class="money-status">
-        <div>Uang Dimasukkan: <strong>Rp.<span id="inserted-amount">0</span></strong></div>
-        <div>Dipilih: <strong><span id="selected-item">Tidak Ada</span></strong></div>
-      </div>
-      
-      <p>Masukkan koin dengan mengklik di bawah ini:</p>
-      <div class="coins">
-        <button class="coin" tabindex="0" data-value="1" aria-label="Masukkan Rp.1.000">Rp.1k</button>
-        <button class="coin" tabindex="0" data-value="5" aria-label="Masukkan Rp.5.000">Rp.5k</button>
-        <button class="coin" tabindex="0" data-value="10" aria-label="Masukkan Rp.10.000">Rp.10k</button>
-      </div>
-    
-      <div class="button-group">
-        <button id="purchase-button" class="purchase-button" disabled>Beli</button>
-        <button id="cancel-button" class="cancel-button">Batal</button>
-      </div>
+    <h3>Pilih Item:</h3>
+    <div class="items">
+        <button id="selectSlipperA">Sandal A (Rp25.000)</button>
+        <button id="selectSlipperB">Sandal B (Rp30.000)</button>
     </div>
 
-    <div class="dispensed" id="dispensed">
-      Produk Anda akan muncul di sini
+    <h3>Masukkan Uang:</h3>
+    <div class="money">
+        <button id="insert10k">Rp10.000</button>
+        <button id="insert50k">Rp50.000</button>
+        <button id="insert20k">Rp20.000</button> 
     </div>
 
-    <div class="machine-state">
-      <div>Status Mesin: <span id="current-state">idle</span></div>
-      <div>Konteks: <span id="context-data">{}</span></div>
+    <div class="display">
+        <h3>Status</h3>
+        <p><strong>Status Saat Ini:</strong> <span id="currentState"></span></p>
+        <p><strong>Item Terpilih:</strong> <span id="selectedItemDisplay">None</span></p>
+        <p><strong>Harga:</strong> <span id="itemPriceDisplay">Rp0</span></p>
+        <p><strong>Uang Dimasukkan:</strong> <span id="insertedMoneyDisplay">Rp0</span></p>
+        <p><strong>Kembalian:</strong> <span id="changeDisplay">Rp0</span></p>
+        <p><strong>Pesan:</strong> <span id="messageDisplay"></span></p>
     </div>
-  </div>
-  <script src="https://unpkg.com/xstate@4.37.1/dist/xstate.js"></script>
-  <script src="script.js"></script>
+
+    <script src="https://unpkg.com/xstate@4/dist/xstate.js"></script>
+    <script src="https://unpkg.com/rxjs@7/dist/bundles/rxjs.umd.min.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
